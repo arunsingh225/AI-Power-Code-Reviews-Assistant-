@@ -9,7 +9,8 @@ from collections import defaultdict
 import google.generativeai as genai
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -467,3 +468,25 @@ async def review_raw_code(request: CodeReviewRequest):
 @app.get("/health")
 async def health():
     return {"status": "ok", "model": "gemini-2.5-flash"}
+
+# ─── Unified Frontend Serving ──────────────────────────────────────────────────
+
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+frontend_dist_dir = os.path.abspath(os.path.join(backend_dir, "..", "frontend", "dist"))
+assets_dir = os.path.join(frontend_dist_dir, "assets")
+index_file = os.path.join(frontend_dist_dir, "index.html")
+
+if os.path.exists(frontend_dist_dir):
+    logger.info(f"Unified build detected! Serving static frontend from: {frontend_dist_dir}")
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+    
+    @app.get("/{catchall:path}")
+    async def serve_frontend(catchall: str):
+        # Ignore API calls or health check
+        if catchall.startswith("api/") or catchall == "health":
+            raise HTTPException(status_code=404)
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        raise HTTPException(status_code=404, detail="Frontend build index.html not found.")
+else:
+    logger.warning(f"Unified build directory not found at: {frontend_dist_dir}. Running in API-only mode.")
