@@ -4,15 +4,15 @@ import axios from "axios"
 const API = "/api"
 
 const SEVERITY = {
-  critical: { color: "#f0f0f0", bg: "rgba(240,240,240,0.1)", border: "rgba(240,240,240,0.3)", label: "CRITICAL" },
-  high:     { color: "#d0d0d0", bg: "rgba(208,208,208,0.08)", border: "rgba(208,208,208,0.25)", label: "HIGH"     },
-  medium:   { color: "#a0a0a0", bg: "rgba(160,160,160,0.08)", border: "rgba(160,160,160,0.2)", label: "MEDIUM"   },
-  low:      { color: "#00d9a3", bg: "rgba(0,217,163,0.08)",  border: "rgba(0,217,163,0.25)", label: "LOW"      },
-  info:     { color: "#6b6b6b", bg: "rgba(107,107,107,0.05)", border: "rgba(107,107,107,0.15)", label: "INFO"     },
+  critical: { color: "#F5F5F5", bg: "rgba(255,255,255,0.06)", border: "rgba(255,255,255,0.15)", label: "CRITICAL" },
+  high:     { color: "#d0d0d0", bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.1)", label: "HIGH"     },
+  medium:   { color: "#a0a0a0", bg: "rgba(255,255,255,0.03)", border: "rgba(255,255,255,0.08)", label: "MEDIUM"   },
+  low:      { color: "#00FFB2", bg: "rgba(0,255,178,0.05)",  border: "rgba(0,255,178,0.2)", label: "LOW"      },
+  info:     { color: "#6b6b6b", bg: "rgba(255,255,255,0.01)", border: "rgba(255,255,255,0.05)", label: "INFO"     },
 }
 
 const TYPE_META = {
-  bug:           { icon: "🐛", label: "Bug",           color: "#f0f0f0" },
+  bug:           { icon: "🐛", label: "Bug",           color: "#F5F5F5" },
   security:      { icon: "🔐", label: "Security",      color: "#d0d0d0" },
   performance:   { icon: "⚡", label: "Performance",   color: "#a0a0a0" },
   code_smell:    { icon: "🔴", label: "Code Smell",    color: "#808080" },
@@ -22,10 +22,10 @@ const TYPE_META = {
 const LANGUAGES = ["auto","python","javascript","typescript","java","go","rust","c","cpp","csharp","php","ruby","swift","kotlin","sql","bash","yaml","json"]
 
 function getScoreColor(score) {
-  if (score >= 85) return "#00d9a3"
-  if (score >= 70) return "#a0a0a0"
-  if (score >= 50) return "#6b6b6b"
-  return "#4a4a4a"
+  if (score >= 85) return "#00FFB2"
+  if (score >= 70) return "#00E5FF"
+  if (score >= 50) return "#a0a0a0"
+  return "#6b6b6b"
 }
 
 // ── Score Ring ────────────────────────────────────────────────────────────────
@@ -153,14 +153,14 @@ function LoadingScreen() {
     <div className="flex flex-col items-center justify-center min-h-[400px] gap-8">
       <div className="relative">
         <div className="w-24 h-24 rounded-full flex items-center justify-center"
-          style={{ border: "2px solid #4a4a4a" }}>
-          <div className="w-16 h-16 rounded-full border-2 border-t-[#00d9a3] border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+          style={{ border: "2px solid rgba(255,255,255,0.1)" }}>
+          <div className="w-16 h-16 rounded-full border-2 border-t-[#00FFB2] border-r-transparent border-b-transparent border-l-transparent animate-spin" />
           <div className="absolute inset-0 flex items-center justify-center">
             <span className="text-3xl">🔍</span>
           </div>
         </div>
         <div className="absolute -inset-2 rounded-full animate-pulse-slow"
-          style={{ background: "rgba(0,217,163,0.05)" }} />
+          style={{ background: "rgba(0,255,178,0.05)" }} />
       </div>
       <div className="text-center space-y-3">
         <h3 className="font-sans font-bold text-xl" style={{ color: "#f0f0f0" }}>Analyzing Code</h3>
@@ -169,7 +169,7 @@ function LoadingScreen() {
       <div className="flex gap-2">
         {steps.map((_, i) => (
           <div key={i} className="w-2 h-2 rounded-full transition-all duration-300"
-            style={{ backgroundColor: i <= step ? "#00d9a3" : "#4a4a4a" }} />
+            style={{ backgroundColor: i <= step ? "#00FFB2" : "rgba(255,255,255,0.15)" }} />
         ))}
       </div>
     </div>
@@ -519,24 +519,24 @@ function Header() {
 // ── Hero ──────────────────────────────────────────────────────────────────────
 function Hero() {
   return (
-    <div className="text-center py-12 px-4 space-y-5">
-      <div className="inline-flex items-center gap-2 font-mono text-xs px-3 py-1.5 rounded-full"
-        style={{ background: "rgba(0,217,163,0.08)", border: "1px solid rgba(0,217,163,0.2)", color: "#00d9a3" }}>
-        <span className="w-1.5 h-1.5 rounded-full bg-[#00d9a3] animate-pulse" />
+    <div className="text-center py-16 px-4 space-y-6 relative z-10">
+      <div className="inline-flex items-center gap-2 font-mono text-xs px-4 py-2 rounded-full"
+        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#00FFB2" }}>
+        <span className="w-1.5 h-1.5 rounded-full bg-[#00FFB2] animate-pulse" />
         Powered by Gemini 1.5 Flash
       </div>
-      <h1 className="font-sans font-extrabold text-4xl sm:text-5xl leading-tight" style={{ color: "#f0f0f0" }}>
-        AI Code Review
+      <h1 className="font-sans font-extrabold text-5xl sm:text-7xl leading-tight tracking-tight">
+        <span className="bg-gradient-to-r from-[#F5F5F5] via-[#E0E0E0] to-[#A0A0A0] bg-clip-text text-transparent">AI Code Review</span>
         <br />
-        <span className="text-glow" style={{ color: "#00d9a3" }}>in Seconds</span>
+        <span className="bg-gradient-to-r from-[#00FFB2] to-[#00E5FF] bg-clip-text text-transparent text-glow">in Seconds</span>
       </h1>
-      <p className="text-base max-w-lg mx-auto leading-relaxed" style={{ color: "#a0a0a0" }}>
-        Paste a GitHub PR URL or your code. Get instant AI-powered reviews that catch bugs,
-        security issues, and performance problems before they ship.
+      <p className="text-base sm:text-lg max-w-xl mx-auto leading-relaxed" style={{ color: "#a0a0a0" }}>
+        Paste a Pull Request URL or raw code. Receive an instant futuristic AI review
+        that detects logical flaws, performance bottlenecks, and security exploits instantly.
       </p>
-      <div className="flex justify-center gap-6 font-mono text-xs" style={{ color: "#6b6b6b" }}>
+      <div className="flex justify-center gap-4 font-mono text-xs flex-wrap" style={{ color: "#6b6b6b" }}>
         {["🐛 Bugs","🔐 Security","⚡ Performance","🔴 Code Smells"].map(t => (
-          <span key={t}>{t}</span>
+          <span key={t} className="px-3 py-1.5 rounded-xl border border-white/[0.04] bg-white/[0.01]">{t}</span>
         ))}
       </div>
     </div>
@@ -553,10 +553,15 @@ export default function App() {
   function handleReset() { setResults(null); setView("input") }
 
   return (
-    <div className="min-h-screen bg-grid" style={{ background: "#1a1a1a" }}>
+    <div className="min-h-screen bg-grid relative overflow-hidden">
+      {/* Premium Apple Vision Pro Backdrop Spheres */}
+      <div className="fixed top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-[#00FFB2] opacity-[0.03] blur-[120px] pointer-events-none z-0" />
+      <div className="fixed bottom-[-20%] right-[-20%] w-[50%] h-[50%] rounded-full bg-[#00E5FF] opacity-[0.03] blur-[120px] pointer-events-none z-0" />
+      <div className="fixed top-[40%] left-[30%] w-[40%] h-[40%] rounded-full bg-[#6b6b6b] opacity-[0.02] blur-[150px] pointer-events-none z-0" />
+
       <div className="scan-line" />
       <Header />
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-16">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-16 relative z-10">
         {view !== "results" && <Hero />}
         <div className={view === "results" ? "pt-6" : ""}>
           {view === "input"   && <InputPanel onResults={handleResults} onLoading={handleLoading} />}
@@ -564,7 +569,7 @@ export default function App() {
           {view === "results" && results && <ResultsDashboard data={results} onReset={handleReset} />}
         </div>
       </main>
-      <footer style={{ borderTop: "1px solid #4a4a4a" }} className="py-6 mt-8">
+      <footer style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }} className="py-6 mt-8 relative z-10">
         <div className="max-w-6xl mx-auto px-6 flex items-center justify-between flex-wrap gap-3">
           <span className="font-mono text-xs" style={{ color: "#4a4a4a" }}>CodeSentinel · AI Code Review Agent</span>
           <span className="font-mono text-xs" style={{ color: "#3a3a3a" }}>Built with Gemini AI + FastAPI + React</span>
