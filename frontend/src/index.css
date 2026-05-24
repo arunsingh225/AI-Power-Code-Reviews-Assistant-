@@ -3,17 +3,11 @@
 @tailwind utilities;
 
 @layer base {
-  * {
-    box-sizing: border-box;
-  }
-
-  html {
-    scroll-behavior: smooth;
-  }
-
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body {
-    background-color: #080c14;
-    color: #e2e8f0;
+    background-color: #1a1a1a;
+    color: #f0f0f0;
     font-family: 'Inter', system-ui, sans-serif;
     min-height: 100vh;
     overflow-x: hidden;
@@ -24,10 +18,10 @@
     height: 6px;
   }
   ::-webkit-scrollbar-track {
-    background: #0d1321;
+    background: #2d2d2d;
   }
   ::-webkit-scrollbar-thumb {
-    background: #1e2d45;
+    background: #4a4a4a;
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
@@ -52,7 +46,7 @@
   }
 
   .input-field {
-    @apply bg-bg-secondary border border-bg-border rounded-lg px-4 py-3 text-sm font-mono
+    @apply bg-bg-input border border-bg-border rounded-lg px-4 py-3 text-sm font-mono
            text-slate-200 placeholder-slate-600 w-full
            focus:outline-none focus:border-accent-green/60 focus:ring-1 focus:ring-accent-green/20
            transition-all duration-200;
@@ -77,134 +71,80 @@
 
 /* Grid noise background */
 .bg-grid {
-  background-color: #080c14;
+  background-color: #1a1a1a;
   background-image:
-    linear-gradient(rgba(0,217,163,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,217,163,0.03) 1px, transparent 1px);
+    linear-gradient(rgba(107,107,107,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(107,107,107,0.03) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
-/* Glow text effect */
 .text-glow {
-  text-shadow: 0 0 20px rgba(0,217,163,0.6), 0 0 40px rgba(0,217,163,0.2);
+  text-shadow: 0 0 20px rgba(0,217,163,0.5), 0 0 40px rgba(0,217,163,0.2);
 }
 
-/* Score ring */
-.score-ring {
-  transform: rotate(-90deg);
-  transform-origin: center;
-  transition: stroke-dasharray 1.2s ease;
-}
+.score-ring { transform: rotate(-90deg); transform-origin: center; }
 
-/* Animated gradient border */
-.gradient-border {
-  position: relative;
-}
+.gradient-border { position: relative; }
 .gradient-border::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, #00d9a3, #4f9cf9, #a78bfa);
+  background: linear-gradient(135deg, #00d9a3, #6b6b6b, #4a4a4a);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  opacity: 0.6;
-  pointer-events: none;
+  opacity: 0.5;
 }
 
-/* Scan line animation */
 @keyframes scanline {
-  0% { transform: translateY(-100vh); opacity: 0; }
-  5% { opacity: 1; }
-  95% { opacity: 0.6; }
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
   100% { transform: translateY(100vh); opacity: 0; }
 }
-
 .scan-line {
   position: fixed;
-  left: 0;
-  right: 0;
+  left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0,217,163,0.5), transparent);
-  animation: scanline 5s linear infinite;
+  background: linear-gradient(90deg, transparent, rgba(0,217,163,0.2), transparent);
+  animation: scanline 6s linear infinite;
   pointer-events: none;
   z-index: 1000;
 }
 
-/* Fade in up animations */
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+.animate-fade-in-up { animation: fadeInUp 0.4s ease forwards; }
+.animate-fade-in-up-delay-1 { animation: fadeInUp 0.4s ease 0.1s both; }
+.animate-fade-in-up-delay-2 { animation: fadeInUp 0.4s ease 0.2s both; }
+.animate-fade-in-up-delay-3 { animation: fadeInUp 0.4s ease 0.3s both; }
+.animate-fade-in-up-delay-4 { animation: fadeInUp 0.4s ease 0.4s both; }
+.animate-fade-in-up-delay-5 { animation: fadeInUp 0.4s ease 0.5s both; }
 
-.animate-fade-in-up            { animation: fadeInUp 0.4s ease forwards; }
-.animate-fade-in-up-delay-1    { animation: fadeInUp 0.4s ease 0.08s both; }
-.animate-fade-in-up-delay-2    { animation: fadeInUp 0.4s ease 0.16s both; }
-.animate-fade-in-up-delay-3    { animation: fadeInUp 0.4s ease 0.24s both; }
-.animate-fade-in-up-delay-4    { animation: fadeInUp 0.4s ease 0.32s both; }
-.animate-fade-in-up-delay-5    { animation: fadeInUp 0.4s ease 0.40s both; }
-
-/* Typing cursor blink */
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0; }
-}
-
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 .cursor-blink::after {
   content: '█';
   color: #00d9a3;
   animation: blink 1s step-end infinite;
   margin-left: 2px;
-  font-size: 0.85em;
+  font-size: 0.9em;
 }
 
-/* Terminal text */
 .terminal-text {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.8rem;
   color: #00d9a3;
 }
 
-/* Score color classes */
-.score-excellent { color: #00d9a3; }
-.score-good      { color: #4f9cf9; }
-.score-fair      { color: #f59e0b; }
-.score-poor      { color: #ff6b35; }
-.score-critical  { color: #ff3b5c; }
+.score-excellent { color: #00d9a3; stroke: #00d9a3; }
+.score-good      { color: #6b9fff; stroke: #6b9fff; }
+.score-fair      { color: #d4a017; stroke: #d4a017; }
+.score-poor      { color: #d4651a; stroke: #d4651a; }
+.score-critical  { color: #c0392b; stroke: #c0392b; }
 
-/* History panel slide-in */
-@keyframes slideIn {
-  from { transform: translateX(100%); opacity: 0; }
-  to   { transform: translateX(0);   opacity: 1; }
-}
-
-.history-panel {
-  animation: slideIn 0.3s ease forwards;
-}
-
-/* Metric bar fill animation */
-@keyframes fillBar {
-  from { width: 0%; }
-}
-
-.metric-bar-fill {
-  animation: fillBar 1s ease forwards;
-}
-
-/* Pulse glow for status dot */
-@keyframes pulseGlow {
-  0%, 100% { box-shadow: 0 0 4px #00d9a3; }
-  50%       { box-shadow: 0 0 12px #00d9a3, 0 0 24px rgba(0,217,163,0.4); }
-}
-
-.status-dot {
-  animation: pulseGlow 2s ease-in-out infinite;
-}
-
-/* Ring spin */
-@keyframes ringPulse {
-  0%, 100% { opacity: 0.3; transform: scale(1) rotate(-90deg); }
-  50%       { opacity: 0.6; transform: scale(1.02) rotate(-90deg); }
-}
+@keyframes pulse-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.animate-pulse-slow { animation: pulse-slow 3s ease-in-out infinite; }

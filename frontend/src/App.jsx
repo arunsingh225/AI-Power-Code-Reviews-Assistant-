@@ -1,221 +1,113 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import axios from "axios"
 
-const API = import.meta.env.VITE_API_URL || "/api"
-
-// ─── Constants ────────────────────────────────────────────────────────────────
+const API = "/api"
 
 const SEVERITY = {
-  critical: { color: "#ff3b5c", bg: "rgba(255,59,92,0.12)",  border: "rgba(255,59,92,0.35)",  label: "CRITICAL" },
-  high:     { color: "#ff6b35", bg: "rgba(255,107,53,0.12)", border: "rgba(255,107,53,0.35)", label: "HIGH"     },
-  medium:   { color: "#f59e0b", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.35)", label: "MEDIUM"   },
-  low:      { color: "#00d9a3", bg: "rgba(0,217,163,0.10)",  border: "rgba(0,217,163,0.35)",  label: "LOW"      },
-  info:     { color: "#7c8dff", bg: "rgba(124,141,255,0.10)",border: "rgba(124,141,255,0.35)",label: "INFO"     },
+  critical: { color: "#f0f0f0", bg: "rgba(240,240,240,0.1)", border: "rgba(240,240,240,0.3)", label: "CRITICAL" },
+  high:     { color: "#d0d0d0", bg: "rgba(208,208,208,0.08)", border: "rgba(208,208,208,0.25)", label: "HIGH"     },
+  medium:   { color: "#a0a0a0", bg: "rgba(160,160,160,0.08)", border: "rgba(160,160,160,0.2)", label: "MEDIUM"   },
+  low:      { color: "#00d9a3", bg: "rgba(0,217,163,0.08)",  border: "rgba(0,217,163,0.25)", label: "LOW"      },
+  info:     { color: "#6b6b6b", bg: "rgba(107,107,107,0.05)", border: "rgba(107,107,107,0.15)", label: "INFO"     },
 }
 
 const TYPE_META = {
-  bug:           { icon: "🐛", label: "Bug",           color: "#ff3b5c" },
-  security:      { icon: "🔐", label: "Security",      color: "#ff6b35" },
-  performance:   { icon: "⚡", label: "Performance",   color: "#f59e0b" },
-  code_smell:    { icon: "🔴", label: "Code Smell",    color: "#a78bfa" },
-  best_practice: { icon: "📋", label: "Best Practice", color: "#4f9cf9" },
+  bug:           { icon: "🐛", label: "Bug",           color: "#f0f0f0" },
+  security:      { icon: "🔐", label: "Security",      color: "#d0d0d0" },
+  performance:   { icon: "⚡", label: "Performance",   color: "#a0a0a0" },
+  code_smell:    { icon: "🔴", label: "Code Smell",    color: "#808080" },
+  best_practice: { icon: "📋", label: "Best Practice", color: "#6b6b6b" },
 }
 
-const LANGUAGES = [
-  "auto","python","javascript","typescript","java","go","rust","c","cpp",
-  "csharp","php","ruby","swift","kotlin","sql","bash","yaml","json",
-]
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const LANGUAGES = ["auto","python","javascript","typescript","java","go","rust","c","cpp","csharp","php","ruby","swift","kotlin","sql","bash","yaml","json"]
 
 function getScoreColor(score) {
   if (score >= 85) return "#00d9a3"
-  if (score >= 70) return "#4f9cf9"
-  if (score >= 50) return "#f59e0b"
-  if (score >= 30) return "#ff6b35"
-  return "#ff3b5c"
+  if (score >= 70) return "#a0a0a0"
+  if (score >= 50) return "#6b6b6b"
+  return "#4a4a4a"
 }
 
-function getGradeLabel(grade) {
-  const labels = { A: "Excellent", B: "Good", C: "Fair", D: "Poor", F: "Critical" }
-  return labels[grade] || ""
-}
-
-function formatDate(iso) {
-  return new Date(iso).toLocaleString(undefined, {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-  })
-}
-
-// ─── localStorage history ─────────────────────────────────────────────────────
-
-const HISTORY_KEY = "codesentinel_history"
-
-function loadHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [] }
-  catch { return [] }
-}
-
-function saveToHistory(entry) {
-  const history = loadHistory()
-  history.unshift(entry)
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20)))
-}
-
-// ─── Markdown Export ──────────────────────────────────────────────────────────
-
-function generateMarkdown(data, meta) {
-  const { overall_score, grade, summary, issues = [], positives = [], metrics = {}, pr_info } = data
-  const severityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
-  const sorted = [...issues].sort((a, b) => (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5))
-
-  let md = `# CodeSentinel Review Report\n\n`
-  md += `> Generated: ${new Date().toLocaleString()}\n\n`
-  if (meta?.label) md += `> **Source:** ${meta.label}\n\n`
-  md += `---\n\n`
-  md += `## 📊 Score: ${overall_score}/100 — Grade ${grade} (${getGradeLabel(grade)})\n\n`
-  md += `## 🔍 AI Summary\n\n${summary}\n\n`
-
-  if (pr_info) {
-    md += `## 📂 PR Info\n\n`
-    md += `- **Title:** ${pr_info.title || "N/A"}\n`
-    md += `- **Author:** @${pr_info.author || "unknown"}\n`
-    md += `- **Branch:** \`${pr_info.base}\` ← \`${pr_info.head}\`\n`
-    md += `- **Changes:** ${pr_info.changed_files} files, +${pr_info.additions}/-${pr_info.deletions}\n\n`
-  }
-
-  md += `## 📈 Metrics\n\n`
-  md += `| Category | Count |\n|---|---|\n`
-  md += `| 🐛 Bugs | ${metrics.bugs ?? 0} |\n`
-  md += `| 🔐 Security | ${metrics.security ?? 0} |\n`
-  md += `| ⚡ Performance | ${metrics.performance ?? 0} |\n`
-  md += `| 🔴 Code Smells | ${metrics.code_smells ?? 0} |\n`
-  md += `| 📋 Best Practices | ${metrics.best_practices ?? 0} |\n\n`
-
-  if (positives.length > 0) {
-    md += `## ✅ Strengths\n\n`
-    positives.forEach(p => { md += `- ${p}\n` })
-    md += `\n`
-  }
-
-  if (sorted.length > 0) {
-    md += `## ⚠️ Issues (${sorted.length})\n\n`
-    sorted.forEach((issue, i) => {
-      md += `### ${i + 1}. [${issue.severity?.toUpperCase()}] ${issue.title}\n\n`
-      md += `- **Type:** ${TYPE_META[issue.type]?.label || issue.type}\n`
-      md += `- **File:** \`${issue.file || "general"}\`${issue.line ? ` line ${issue.line}` : ""}\n\n`
-      md += `**Description:** ${issue.description}\n\n`
-      if (issue.suggestion) md += `**Suggestion:** ${issue.suggestion}\n\n`
-      md += `---\n\n`
-    })
-  }
-
-  md += `*Generated by [CodeSentinel](https://github.com) — AI Code Review Agent powered by Gemini 2.5 Flash*\n`
-  return md
-}
-
-function downloadMarkdown(data, meta) {
-  const md = generateMarkdown(data, meta)
-  const blob = new Blob([md], { type: "text/markdown" })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = `codesentinel-review-${Date.now()}.md`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-// ─── ScoreRing ────────────────────────────────────────────────────────────────
-
-function ScoreRing({ score, size = 144 }) {
-  const radius = size === 144 ? 54 : 40
+// ── Score Ring ────────────────────────────────────────────────────────────────
+function ScoreRing({ score }) {
+  const radius = 54
   const circ = 2 * Math.PI * radius
   const dash = (score / 100) * circ
   const color = getScoreColor(score)
-  const cx = size / 2
-  const cy = size / 2
-
   return (
-    <svg width={size} height={size} className="block">
-      <circle cx={cx} cy={cy} r={radius} fill="none" stroke="#1e2d45" strokeWidth={size === 144 ? 10 : 7} />
-      <circle
-        cx={cx} cy={cy} r={radius}
-        fill="none"
-        stroke={color}
-        strokeWidth={size === 144 ? 10 : 7}
-        strokeLinecap="round"
-        strokeDasharray={`${dash} ${circ}`}
-        className="score-ring"
-        style={{ filter: `drop-shadow(0 0 8px ${color}80)` }}
-      />
-    </svg>
+    <div className="flex flex-col items-center">
+      <div className="relative w-36 h-36">
+        <svg width="144" height="144" className="block">
+          <circle cx="72" cy="72" r={radius} fill="none" stroke="#4a4a4a" strokeWidth="10" />
+          <circle cx="72" cy="72" r={radius} fill="none" stroke={color} strokeWidth="10"
+            strokeLinecap="round"
+            strokeDasharray={`${dash} ${circ}`}
+            className="score-ring transition-all duration-1000"
+            style={{ filter: `drop-shadow(0 0 6px ${color}60)` }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-mono font-bold text-3xl" style={{ color }}>{score}</span>
+          <span className="font-mono text-xs" style={{ color: "#6b6b6b" }}>/100</span>
+        </div>
+      </div>
+    </div>
   )
 }
 
-// ─── Badges ───────────────────────────────────────────────────────────────────
-
+// ── Badges ────────────────────────────────────────────────────────────────────
 function SeverityBadge({ severity }) {
   const s = SEVERITY[severity] || SEVERITY.info
   return (
-    <span
-      className="severity-badge"
-      style={{ color: s.color, backgroundColor: s.bg, border: `1px solid ${s.border}` }}
-    >
+    <span className="severity-badge"
+      style={{ color: s.color, backgroundColor: s.bg, border: `1px solid ${s.border}` }}>
       {s.label}
     </span>
   )
 }
 
 function TypeBadge({ type }) {
-  const t = TYPE_META[type] || { icon: "📌", label: type, color: "#7c8dff" }
+  const t = TYPE_META[type] || { icon: "📌", label: type, color: "#6b6b6b" }
   return (
-    <span
-      className="flex items-center gap-1 font-mono text-xs px-2 py-0.5 rounded"
-      style={{ color: t.color, backgroundColor: `${t.color}15` }}
-    >
-      <span>{t.icon}</span>
-      <span>{t.label}</span>
+    <span className="flex items-center gap-1 font-mono text-xs px-2 py-0.5 rounded"
+      style={{ color: t.color, backgroundColor: `${t.color}18` }}>
+      <span>{t.icon}</span><span>{t.label}</span>
     </span>
   )
 }
 
-// ─── IssueCard ────────────────────────────────────────────────────────────────
-
+// ── Issue Card ────────────────────────────────────────────────────────────────
 function IssueCard({ issue, idx }) {
   const [expanded, setExpanded] = useState(false)
   const s = SEVERITY[issue.severity] || SEVERITY.info
-
   return (
-    <div
-      className="issue-card animate-fade-in-up"
-      style={{ animationDelay: `${idx * 0.04}s`, borderLeft: `3px solid ${s.color}` }}
-      onClick={() => setExpanded(!expanded)}
-    >
+    <div className="issue-card animate-fade-in-up"
+      style={{ animationDelay: `${idx * 0.05}s`, borderLeft: `3px solid ${s.color}` }}
+      onClick={() => setExpanded(!expanded)}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <SeverityBadge severity={issue.severity} />
           <TypeBadge type={issue.type} />
           {issue.file && issue.file !== "general" && (
-            <span className="font-mono text-xs text-slate-500 bg-bg-secondary px-2 py-0.5 rounded">
+            <span className="font-mono text-xs px-2 py-0.5 rounded"
+              style={{ color: "#6b6b6b", background: "#2d2d2d" }}>
               {issue.file}{issue.line ? `:${issue.line}` : ""}
             </span>
           )}
         </div>
-        <span className="text-slate-600 text-sm shrink-0 mt-0.5">{expanded ? "▲" : "▼"}</span>
+        <span style={{ color: "#6b6b6b" }} className="text-sm shrink-0">{expanded ? "▲" : "▼"}</span>
       </div>
-
-      <p className="font-body font-medium text-slate-200 mt-2 text-sm">{issue.title}</p>
-
+      <p className="font-sans font-medium mt-2 text-sm" style={{ color: "#f0f0f0" }}>{issue.title}</p>
       {expanded && (
-        <div className="mt-3 space-y-3 border-t border-bg-border pt-3">
+        <div className="mt-3 space-y-3 pt-3" style={{ borderTop: "1px solid #4a4a4a" }}>
           <div>
-            <p className="font-mono text-xs text-slate-500 uppercase tracking-wider mb-1">Issue</p>
-            <p className="text-sm text-slate-300 font-body leading-relaxed">{issue.description}</p>
+            <p className="font-mono text-xs uppercase tracking-wider mb-1" style={{ color: "#6b6b6b" }}>Issue</p>
+            <p className="text-sm leading-relaxed" style={{ color: "#a0a0a0" }}>{issue.description}</p>
           </div>
           {issue.suggestion && (
             <div>
-              <p className="font-mono text-xs text-accent-green uppercase tracking-wider mb-1">💡 Suggestion</p>
-              <p className="text-sm text-slate-300 font-body leading-relaxed whitespace-pre-wrap">{issue.suggestion}</p>
+              <p className="font-mono text-xs uppercase tracking-wider mb-1" style={{ color: "#00d9a3" }}>💡 Suggestion</p>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "#a0a0a0" }}>{issue.suggestion}</p>
             </div>
           )}
         </div>
@@ -224,574 +116,149 @@ function IssueCard({ issue, idx }) {
   )
 }
 
-// ─── MetricBar ────────────────────────────────────────────────────────────────
-
+// ── Metric Bar ────────────────────────────────────────────────────────────────
 function MetricBar({ label, value, max, color }) {
-  const pct = max ? Math.min(Math.round((value / max) * 100), 100) : 0
+  const pct = max ? Math.round((value / max) * 100) : 0
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between items-center">
-        <span className="font-mono text-xs text-slate-400">{label}</span>
+        <span className="font-mono text-xs" style={{ color: "#a0a0a0" }}>{label}</span>
         <span className="font-mono text-xs font-bold" style={{ color }}>{value}</span>
       </div>
-      <div className="h-1.5 bg-bg-secondary rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full metric-bar-fill"
-          style={{ width: `${pct}%`, backgroundColor: color, boxShadow: `0 0 6px ${color}60` }}
-        />
+      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#2d2d2d" }}>
+        <div className="h-full rounded-full transition-all duration-1000"
+          style={{ width: `${pct}%`, backgroundColor: color }} />
       </div>
     </div>
   )
 }
 
-// ─── LoadingScreen ────────────────────────────────────────────────────────────
-
+// ── Loading Screen ────────────────────────────────────────────────────────────
 function LoadingScreen() {
   const [step, setStep] = useState(0)
   const steps = [
-    "Connecting to GitHub API...",
-    "Fetching PR diff...",
+    "Fetching PR diff from GitHub...",
     "Parsing file changes...",
-    "Initializing Claude AI...",
-    "Running security analysis...",
-    "Detecting performance issues...",
-    "Checking best practices...",
-    "Generating review report...",
+    "Running AI analysis...",
+    "Detecting security vulnerabilities...",
+    "Identifying performance bottlenecks...",
+    "Generating review comments...",
+    "Finalizing report...",
   ]
-
   useEffect(() => {
-    const t = setInterval(() => setStep(s => (s + 1) % steps.length), 1400)
+    const t = setInterval(() => setStep(s => (s + 1) % steps.length), 1200)
     return () => clearInterval(t)
   }, [])
-
   return (
-    <div className="flex flex-col items-center justify-center min-h-[480px] gap-10">
-      {/* Animated rings */}
-      <div className="relative flex items-center justify-center">
-        <div className="absolute w-32 h-32 rounded-full border border-accent-green/10 animate-ping" style={{ animationDuration: "2s" }} />
-        <div className="absolute w-24 h-24 rounded-full border border-accent-green/20 animate-pulse" />
-        <div className="w-20 h-20 rounded-full border-2 border-t-accent-green border-r-accent-green/30 border-b-transparent border-l-transparent animate-spin flex items-center justify-center">
-          <span className="text-2xl">🔍</span>
+    <div className="flex flex-col items-center justify-center min-h-[400px] gap-8">
+      <div className="relative">
+        <div className="w-24 h-24 rounded-full flex items-center justify-center"
+          style={{ border: "2px solid #4a4a4a" }}>
+          <div className="w-16 h-16 rounded-full border-2 border-t-[#00d9a3] border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-3xl">🔍</span>
+          </div>
         </div>
+        <div className="absolute -inset-2 rounded-full animate-pulse-slow"
+          style={{ background: "rgba(0,217,163,0.05)" }} />
       </div>
-
-      <div className="text-center space-y-4">
-        <h3 className="font-sans font-bold text-xl text-slate-100">Analyzing Code…</h3>
+      <div className="text-center space-y-3">
+        <h3 className="font-sans font-bold text-xl" style={{ color: "#f0f0f0" }}>Analyzing Code</h3>
         <p className="terminal-text cursor-blink">{steps[step]}</p>
       </div>
-
-      {/* Step progress */}
       <div className="flex gap-2">
         {steps.map((_, i) => (
-          <div
-            key={i}
-            className="rounded-full transition-all duration-500"
-            style={{
-              width:  i === step ? "20px" : "8px",
-              height: "8px",
-              backgroundColor: i <= step ? "#00d9a3" : "#1e2d45",
-              boxShadow: i === step ? "0 0 8px #00d9a3" : "none",
-            }}
-          />
+          <div key={i} className="w-2 h-2 rounded-full transition-all duration-300"
+            style={{ backgroundColor: i <= step ? "#00d9a3" : "#4a4a4a" }} />
         ))}
       </div>
-
-      <p className="font-mono text-xs text-slate-600">Powered by Gemini 2.5 Flash (Free Tier)</p>
     </div>
   )
 }
 
-// ─── History Panel ────────────────────────────────────────────────────────────
-
-function HistoryPanel({ history, onSelect, onClose, onClear }) {
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
-      <div
-        className="w-full max-w-sm bg-bg-secondary border-l border-bg-border h-full overflow-y-auto history-panel"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="sticky top-0 bg-bg-secondary border-b border-bg-border px-5 py-4 flex items-center justify-between">
-          <div>
-            <h3 className="font-sans font-bold text-slate-100">Review History</h3>
-            <p className="font-mono text-xs text-slate-500 mt-0.5">{history.length} saved reviews</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {history.length > 0 && (
-              <button
-                onClick={onClear}
-                className="font-mono text-xs text-red-400 hover:text-red-300 border border-red-400/20 hover:border-red-400/40 px-2 py-1 rounded transition-all"
-              >
-                Clear
-              </button>
-            )}
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-200 text-xl leading-none px-1">×</button>
-          </div>
-        </div>
-
-        <div className="p-3 space-y-2">
-          {history.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-slate-500 font-mono text-sm">No reviews yet</p>
-              <p className="text-slate-600 font-mono text-xs mt-1">Run a review to see history</p>
-            </div>
-          ) : (
-            history.map((item, i) => {
-              const color = getScoreColor(item.data.overall_score || 0)
-              return (
-                <button
-                  key={i}
-                  onClick={() => { onSelect(item); onClose() }}
-                  className="w-full text-left card p-3 hover:bg-bg-hover transition-all duration-200 space-y-2"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="relative w-8 h-8 shrink-0">
-                        <ScoreRing score={item.data.overall_score || 0} size={32} />
-                        <span className="absolute inset-0 flex items-center justify-center font-mono text-[8px] font-bold" style={{ color }}>
-                          {item.data.overall_score}
-                        </span>
-                      </div>
-                      <span className="font-mono text-sm font-bold" style={{ color }}>{item.data.grade}</span>
-                    </div>
-                    <span className="font-mono text-xs text-slate-600 shrink-0">{formatDate(item.timestamp)}</span>
-                  </div>
-                  <p className="font-mono text-xs text-slate-400 truncate">{item.meta?.label || "Code Review"}</p>
-                </button>
-              )
-            })
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Donut Chart ──────────────────────────────────────────────────────────────
-
-function DonutChart({ metrics }) {
-  const categories = [
-    { key: "bugs", label: "Bugs", color: "#ff3b5c", icon: "🐛" },
-    { key: "security", label: "Security", color: "#ff6b35", icon: "🔐" },
-    { key: "performance", label: "Performance", color: "#f59e0b", icon: "⚡" },
-    { key: "code_smells", label: "Code Smells", color: "#a78bfa", icon: "🔴" },
-    { key: "best_practices", label: "Best Practices", color: "#4f9cf9", icon: "📋" }
-  ];
-
-  const dataPoints = categories.map(cat => ({
-    ...cat,
-    value: metrics[cat.key] || 0
-  }));
-
-  const total = dataPoints.reduce((acc, curr) => acc + curr.value, 0);
-  const [hoveredIndex, setHoveredIndex] = useState(null);
-
-  const size = 160;
-  const strokeWidth = 14;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-
-  let accumulatedPercent = 0;
-
-  return (
-    <div className="flex flex-col sm:flex-row items-center gap-6 p-4 bg-bg-secondary/40 border border-bg-border/60 rounded-xl">
-      <div className="relative w-[160px] h-[160px] flex items-center justify-center shrink-0">
-        {total === 0 ? (
-          <svg width={size} height={size} className="transform -rotate-90">
-            <circle
-              cx={size / 2}
-              cy={size / 2}
-              r={radius}
-              fill="none"
-              stroke="#1e2d45"
-              strokeWidth={strokeWidth}
-            />
-          </svg>
-        ) : (
-          <svg width={size} height={size} className="transform -rotate-90">
-            {dataPoints.map((point, index) => {
-              if (point.value === 0) return null;
-              const percent = (point.value / total) * 100;
-              const dashArray = `${(percent / 100) * circumference} ${circumference}`;
-              const dashOffset = -((accumulatedPercent / 100) * circumference);
-              accumulatedPercent += percent;
-
-              const isHovered = hoveredIndex === index;
-
-              return (
-                <circle
-                  key={point.key}
-                  cx={size / 2}
-                  cy={size / 2}
-                  r={radius}
-                  fill="none"
-                  stroke={point.color}
-                  strokeWidth={isHovered ? strokeWidth + 3 : strokeWidth}
-                  strokeDasharray={dashArray}
-                  strokeDashoffset={dashOffset}
-                  className="transition-all duration-300 cursor-pointer"
-                  style={{
-                    filter: isHovered ? `drop-shadow(0 0 6px ${point.color}aa)` : "none"
-                  }}
-                  onMouseEnter={() => setHoveredIndex(index)}
-                  onMouseLeave={() => setHoveredIndex(null)}
-                />
-              );
-            })}
-          </svg>
-        )}
-        
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          {hoveredIndex !== null ? (
-            <>
-              <span className="font-mono text-2xl font-bold animate-fade-in" style={{ color: dataPoints[hoveredIndex].color }}>
-                {dataPoints[hoveredIndex].value}
-              </span>
-              <span className="font-mono text-[9px] text-slate-500 uppercase tracking-wider text-center max-w-[80px] truncate">
-                {dataPoints[hoveredIndex].label}
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="font-mono text-2xl font-bold text-slate-200">
-                {total}
-              </span>
-              <span className="font-mono text-[9px] text-slate-500 uppercase tracking-wider">
-                Total Issues
-              </span>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="flex-1 w-full space-y-2">
-        {dataPoints.map((point, index) => {
-          const isHovered = hoveredIndex === index;
-          return (
-            <div
-              key={point.key}
-              className={`flex items-center justify-between p-1.5 rounded transition-all duration-200 ${
-                isHovered ? "bg-bg-hover/80 pl-2.5" : ""
-              } ${point.value === 0 ? "opacity-30" : "cursor-pointer"}`}
-              onMouseEnter={() => point.value > 0 && setHoveredIndex(index)}
-              onMouseLeave={() => setHoveredIndex(null)}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-sm shrink-0">{point.icon}</span>
-                <span className="font-mono text-[11px] text-slate-300 font-medium">{point.label}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold" style={{ color: point.color }}>
-                  {point.value}
-                </span>
-                {total > 0 && (
-                  <span className="font-mono text-[9px] text-slate-500">
-                    ({Math.round((point.value / total) * 100)}%)
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── Diff Viewer ──────────────────────────────────────────────────────────────
-
-function DiffViewer({ files, issues }) {
-  if (!files || files.length === 0) return null;
-
-  const [expandedFile, setExpandedFile] = useState(files[0]?.name || null);
-
-  const toggleFile = (filename) => {
-    setExpandedFile(expandedFile === filename ? null : filename);
-  };
-
-  const parseDiffPatch = (patchText) => {
-    if (!patchText) return [];
-    const lines = patchText.split("\n");
-    let currentNewLine = 0;
-    const parsedLines = [];
-
-    for (let line of lines) {
-      if (line.startsWith("@@")) {
-        const match = line.match(/@@ -\d+,?\d* \+(\d+),?\d* @@/);
-        if (match) {
-          currentNewLine = parseInt(match[1], 10);
-        }
-        parsedLines.push({ type: "header", text: line, lineNum: null });
-      } else if (line.startsWith("+")) {
-        parsedLines.push({ type: "added", text: line, lineNum: currentNewLine });
-        currentNewLine++;
-      } else if (line.startsWith("-")) {
-        parsedLines.push({ type: "deleted", text: line, lineNum: null });
-      } else {
-        parsedLines.push({ type: "context", text: line, lineNum: currentNewLine });
-        currentNewLine++;
-      }
-    }
-    return parsedLines;
-  };
-
-  return (
-    <div className="space-y-4">
-      <h3 className="font-sans font-bold text-slate-100 text-lg flex items-center gap-2">
-        <span>📂</span> Visual Code Changes & Highlights
-      </h3>
-      <div className="space-y-3">
-        {files.map((file) => {
-          const isExpanded = expandedFile === file.name;
-          const fileIssues = issues.filter((i) => i.file === file.name && i.line !== null);
-          const parsedLines = parseDiffPatch(file.patch);
-
-          return (
-            <div key={file.name} className="card overflow-hidden transition-all duration-200">
-              <button
-                onClick={() => toggleFile(file.name)}
-                className="w-full flex items-center justify-between bg-bg-secondary/40 hover:bg-bg-hover/60 px-4 py-3 border-b border-bg-border/60 transition-all text-left cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="text-slate-500 text-sm">{isExpanded ? "📂" : "📁"}</span>
-                  <span className="font-mono text-xs text-slate-300 font-bold truncate">{file.name}</span>
-                  {fileIssues.length > 0 && (
-                    <span className="bg-red-500/20 text-red-400 border border-red-500/30 text-[10px] font-bold font-mono px-2 py-0.5 rounded-full shrink-0 animate-pulse">
-                      {fileIssues.length} issue{fileIssues.length > 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="flex gap-2 font-mono text-[10px]">
-                    <span className="text-emerald-400">+{file.additions}</span>
-                    <span className="text-red-400">-{file.deletions}</span>
-                  </div>
-                  <span className="text-slate-500 text-xs">{isExpanded ? "▲" : "▼"}</span>
-                </div>
-              </button>
-
-              {isExpanded && (
-                <div className="overflow-x-auto bg-[#05080c] font-mono text-xs leading-relaxed max-h-[500px] overflow-y-auto">
-                  {!file.patch ? (
-                    <div className="p-4 text-slate-600 font-mono text-center">No diff patches available for this file.</div>
-                  ) : (
-                    <div className="min-w-max py-2">
-                      {parsedLines.map((line, idx) => {
-                        const lineIssues = line.lineNum !== null ? fileIssues.filter(i => i.line === line.lineNum) : [];
-
-                        let lineBg = "";
-                        let prefixColor = "text-slate-600";
-                        if (line.type === "added") {
-                          lineBg = "bg-emerald-500/5 hover:bg-emerald-500/10";
-                          prefixColor = "text-emerald-500/50";
-                        } else if (line.type === "deleted") {
-                          lineBg = "bg-red-500/5 hover:bg-red-500/10";
-                          prefixColor = "text-red-500/50";
-                        } else if (line.type === "header") {
-                          lineBg = "bg-blue-500/5 text-blue-400/80 border-y border-bg-border/20 py-1";
-                          prefixColor = "text-blue-500/30";
-                        } else {
-                          lineBg = "hover:bg-bg-hover/20";
-                        }
-
-                        const hasIssues = lineIssues.length > 0;
-                        if (hasIssues) {
-                          lineBg = "bg-red-500/10 border-l-2 border-red-500 hover:bg-red-500/15";
-                        }
-
-                        return (
-                          <div key={idx} className="flex flex-col">
-                            <div className={`flex items-stretch pr-4 transition-colors duration-150 ${lineBg}`}>
-                              <div className="w-12 text-right pr-3 select-none text-slate-600 border-r border-bg-border/20 shrink-0 font-mono text-[10px] flex items-center justify-end">
-                                {line.lineNum !== null ? line.lineNum : ""}
-                              </div>
-                              <pre className="pl-4 py-0.5 whitespace-pre flex-1 font-mono text-[11px] text-slate-300 font-light">
-                                <span className={`mr-2 font-bold select-none ${prefixColor}`}>
-                                  {line.type === "added" ? "+" : line.type === "deleted" ? "-" : " "}
-                                </span>
-                                {line.type === "added" || line.type === "deleted" ? line.text.substring(1) : line.text}
-                              </pre>
-                            </div>
-
-                            {hasIssues && lineIssues.map((issue) => {
-                              return (
-                                <div key={issue.id} className="pl-16 pr-4 py-3 bg-red-950/20 border-y border-red-500/20 my-1 animate-fade-in-up font-body">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <SeverityBadge severity={issue.severity} />
-                                    <TypeBadge type={issue.type} />
-                                    <span className="font-mono text-[10px] text-red-400 font-bold uppercase tracking-wider">Line {issue.line} issue:</span>
-                                  </div>
-                                  <p className="text-slate-200 text-sm font-semibold mt-1">{issue.title}</p>
-                                  <p className="text-slate-400 text-xs mt-1 leading-relaxed">{issue.description}</p>
-                                  {issue.suggestion && (
-                                    <div className="mt-2 bg-[#0a0f18] border border-bg-border rounded p-2.5">
-                                      <p className="font-mono text-[10px] text-accent-green font-bold uppercase tracking-wider mb-1">💡 Suggested Fix:</p>
-                                      <pre className="font-mono text-xs text-slate-300 whitespace-pre-wrap leading-relaxed bg-transparent p-0 border-0">{issue.suggestion}</pre>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── Results Dashboard ────────────────────────────────────────────────────────
-
-function ResultsDashboard({ data, meta, onReset, onExport, githubToken }) {
+// ── Results Dashboard ─────────────────────────────────────────────────────────
+function ResultsDashboard({ data, onReset }) {
   const [filter, setFilter] = useState("all")
   const [typeFilter, setTypeFilter] = useState("all")
 
-  const [showCommentModal, setShowCommentModal] = useState(false)
-  const [githubTokenInput, setGithubTokenInput] = useState(githubToken || "")
-  const [commenting, setCommenting] = useState(false)
-  const [commentSuccessUrl, setCommentSuccessUrl] = useState("")
-  const [commentError, setCommentError] = useState("")
-
-  const issues   = data.issues   || []
-  const metrics  = data.metrics  || {}
+  const issues = data.issues || []
+  const metrics = data.metrics || {}
   const positives = data.positives || []
-  const prInfo   = data.pr_info
-
+  const prInfo = data.pr_info
   const totalIssues = Object.values(metrics).reduce((a, b) => a + b, 0)
 
   const filtered = issues.filter(i => {
-    const sevMatch  = filter === "all"     || i.severity === filter
+    const sevMatch = filter === "all" || i.severity === filter
     const typeMatch = typeFilter === "all" || i.type === typeFilter
     return sevMatch && typeMatch
   })
 
   const gradeColor = getScoreColor(data.overall_score || 0)
 
-  const handlePostComment = async () => {
-    setCommentError("")
-    setCommentSuccessUrl("")
-    setCommenting(true)
-
-    try {
-      const res = await axios.post(`${API}/review/github/post-comment`, {
-        pr_url: prInfo.url,
-        github_token: githubTokenInput.trim(),
-        report: data
-      })
-      if (res.data.status === "success") {
-        setCommentSuccessUrl(res.data.comment_url)
-      } else {
-        setCommentError("Failed to post comment.")
-      }
-    } catch (err) {
-      const msg = err.response?.data?.detail || err.message || "Failed to post comment to GitHub."
-      setCommentError(msg)
-    } finally {
-      setCommenting(false)
-    }
-  }
-
   return (
     <div className="space-y-6 animate-fade-in-up">
-
       {/* Top bar */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-accent-green status-dot" />
-          <span className="font-mono text-sm text-slate-400">Review complete</span>
+          <div className="w-2 h-2 rounded-full bg-[#00d9a3] animate-pulse" />
+          <span className="font-mono text-sm" style={{ color: "#a0a0a0" }}>Review complete</span>
           {prInfo?.url && (
             <a href={prInfo.url} target="_blank" rel="noopener noreferrer"
-               className="font-mono text-xs text-accent-blue hover:underline">
+               className="font-mono text-xs hover:underline" style={{ color: "#00d9a3" }}>
               View PR ↗
             </a>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {prInfo?.url && (
-            <button
-              onClick={() => setShowCommentModal(true)}
-              className="font-mono text-xs text-slate-400 hover:text-accent-green border border-bg-border hover:border-accent-green/40 px-3 py-2 rounded transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
-            >
-              💬 Post to GitHub
-            </button>
-          )}
-          <button
-            onClick={onExport}
-            className="font-mono text-xs text-slate-400 hover:text-accent-green border border-bg-border hover:border-accent-green/40 px-3 py-2 rounded transition-all duration-200 flex items-center gap-1.5"
-          >
-            ↓ Export MD
-          </button>
-          <button onClick={onReset} className="btn-secondary text-xs">← New Review</button>
-        </div>
+        <button onClick={onReset} className="btn-secondary text-xs">← New Review</button>
       </div>
 
-      {/* PR Info banner */}
+      {/* PR Info */}
       {prInfo && (
         <div className="card p-4 gradient-border animate-fade-in-up-delay-1">
           <div className="flex items-start gap-4 flex-wrap">
             {prInfo.avatar && (
-              <img src={prInfo.avatar} alt={prInfo.author} className="w-10 h-10 rounded-full border border-bg-border shrink-0" />
+              <img src={prInfo.avatar} alt={prInfo.author}
+                className="w-10 h-10 rounded-full" style={{ border: "1px solid #4a4a4a" }} />
             )}
             <div className="flex-1 min-w-0">
-              <p className="font-sans font-semibold text-slate-100 truncate">{prInfo.title}</p>
+              <p className="font-sans font-semibold truncate" style={{ color: "#f0f0f0" }}>{prInfo.title}</p>
               <div className="flex items-center gap-3 mt-1 flex-wrap">
-                {prInfo.author && <span className="font-mono text-xs text-slate-500">@{prInfo.author}</span>}
+                {prInfo.author && <span className="font-mono text-xs" style={{ color: "#6b6b6b" }}>@{prInfo.author}</span>}
                 {prInfo.base && prInfo.head && (
-                  <span className="font-mono text-xs text-slate-600">
-                    <span className="text-slate-400">{prInfo.base}</span>
-                    {" ← "}
-                    <span className="text-accent-green">{prInfo.head}</span>
+                  <span className="font-mono text-xs" style={{ color: "#6b6b6b" }}>
+                    <span style={{ color: "#a0a0a0" }}>{prInfo.base}</span> ← <span style={{ color: "#00d9a3" }}>{prInfo.head}</span>
                   </span>
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-4 font-mono text-xs shrink-0">
-              <span className="text-slate-500">{prInfo.changed_files} files</span>
-              <span className="text-emerald-400">+{prInfo.additions}</span>
-              <span className="text-red-400">-{prInfo.deletions}</span>
+            <div className="flex items-center gap-4 font-mono text-xs">
+              <span style={{ color: "#6b6b6b" }}>{prInfo.changed_files} files</span>
+              <span style={{ color: "#00d9a3" }}>+{prInfo.additions}</span>
+              <span style={{ color: "#808080" }}>-{prInfo.deletions}</span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Score + Summary row */}
+      {/* Score + Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in-up-delay-2">
-        {/* Score card */}
-        <div className="card p-6 flex flex-col items-center gap-4 justify-center">
-          <div className="relative w-36 h-36">
-            <ScoreRing score={data.overall_score || 0} size={144} />
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="font-mono font-bold text-3xl" style={{ color: gradeColor }}>
-                {data.overall_score || 0}
-              </span>
-              <span className="font-mono text-xs text-slate-500">/100</span>
-            </div>
-          </div>
+        <div className="card p-6 flex flex-col items-center gap-3">
+          <ScoreRing score={data.overall_score || 0} />
           <div className="text-center">
-            <p className="font-sans font-extrabold text-5xl" style={{ color: gradeColor }}>{data.grade || "?"}</p>
-            <p className="font-mono text-xs text-slate-500 mt-1">{getGradeLabel(data.grade)}</p>
+            <p className="font-mono text-4xl font-bold" style={{ color: gradeColor }}>{data.grade || "?"}</p>
+            <p className="font-mono text-xs mt-1" style={{ color: "#6b6b6b" }}>Overall Grade</p>
           </div>
         </div>
-
-        {/* AI Summary card */}
-        <div className="card p-5 flex flex-col justify-between gap-4">
+        <div className="card p-5 md:col-span-2 flex flex-col justify-between gap-4">
           <div>
-            <p className="font-mono text-xs text-slate-500 uppercase tracking-wider mb-2">AI Summary</p>
-            <p className="text-sm text-slate-300 leading-relaxed font-body">{data.summary}</p>
+            <p className="font-mono text-xs uppercase tracking-wider mb-2" style={{ color: "#6b6b6b" }}>AI Summary</p>
+            <p className="text-sm leading-relaxed" style={{ color: "#a0a0a0" }}>{data.summary}</p>
           </div>
-        </div>
-
-        {/* Donut Chart segment breakdown card */}
-        <div className="card p-5 flex flex-col justify-between gap-4">
-          <div>
-            <p className="font-mono text-xs text-slate-500 uppercase tracking-wider mb-2">Issue Breakdown</p>
-            <DonutChart metrics={metrics} />
+          <div className="grid grid-cols-2 gap-3">
+            <MetricBar label="Bugs"        value={metrics.bugs || 0}          max={Math.max(totalIssues,1)} color="#f0f0f0" />
+            <MetricBar label="Security"    value={metrics.security || 0}      max={Math.max(totalIssues,1)} color="#d0d0d0" />
+            <MetricBar label="Performance" value={metrics.performance || 0}   max={Math.max(totalIssues,1)} color="#a0a0a0" />
+            <MetricBar label="Code Smells" value={metrics.code_smells || 0}   max={Math.max(totalIssues,1)} color="#808080" />
           </div>
         </div>
       </div>
@@ -801,17 +268,13 @@ function ResultsDashboard({ data, meta, onReset, onExport, githubToken }) {
         {["critical","high","medium","low","info"].map(sev => {
           const count = issues.filter(i => i.severity === sev).length
           const s = SEVERITY[sev]
-          const active = filter === sev
           return (
-            <button
-              key={sev}
-              id={`filter-${sev}`}
-              onClick={() => setFilter(active ? "all" : sev)}
-              className="card p-3 text-center transition-all duration-200 hover:bg-bg-hover cursor-pointer"
-              style={active ? { borderColor: s.border, backgroundColor: s.bg } : {}}
-            >
+            <button key={sev}
+              onClick={() => setFilter(filter === sev ? "all" : sev)}
+              className="card p-3 text-center transition-all duration-200"
+              style={filter === sev ? { borderColor: s.border, background: s.bg } : {}}>
               <p className="font-mono text-xl font-bold" style={{ color: s.color }}>{count}</p>
-              <p className="font-mono text-xs text-slate-500 mt-1">{s.label}</p>
+              <p className="font-mono text-xs mt-1" style={{ color: "#6b6b6b" }}>{s.label}</p>
             </button>
           )
         })}
@@ -819,54 +282,46 @@ function ResultsDashboard({ data, meta, onReset, onExport, githubToken }) {
 
       {/* Positives */}
       {positives.length > 0 && (
-        <div className="card p-5 border-accent-green/20 animate-fade-in-up-delay-4">
-          <p className="font-mono text-xs text-accent-green uppercase tracking-wider mb-3">✓ Strengths</p>
-          <div className="space-y-2">
+        <div className="card p-4 animate-fade-in-up-delay-4"
+          style={{ borderColor: "rgba(0,217,163,0.2)" }}>
+          <p className="font-mono text-xs uppercase tracking-wider mb-3" style={{ color: "#00d9a3" }}>✓ Strengths</p>
+          <div className="space-y-1.5">
             {positives.map((p, i) => (
-              <div key={i} className="flex items-start gap-2.5 text-sm text-slate-300 font-body">
-                <span className="text-accent-green mt-0.5 shrink-0 text-base">●</span>
-                <span className="leading-relaxed">{p}</span>
+              <div key={i} className="flex items-start gap-2 text-sm" style={{ color: "#a0a0a0" }}>
+                <span style={{ color: "#00d9a3" }} className="mt-0.5 shrink-0">●</span>
+                <span>{p}</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Issues section */}
+      {/* Issues */}
       <div className="animate-fade-in-up-delay-5">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div className="flex items-center gap-2">
-            <h2 className="font-sans font-bold text-slate-100 text-lg">Issues</h2>
-            <span className="font-mono text-xs bg-bg-secondary text-slate-400 px-2 py-0.5 rounded border border-bg-border">
+            <h2 className="font-sans font-bold" style={{ color: "#f0f0f0" }}>Issues</h2>
+            <span className="font-mono text-xs px-2 py-0.5 rounded"
+              style={{ background: "#2d2d2d", color: "#6b6b6b" }}>
               {filtered.length} / {issues.length}
             </span>
           </div>
-
-          {/* Type filter */}
           <div className="flex gap-2 flex-wrap">
-            <button
-              id="type-filter-all"
-              onClick={() => setTypeFilter("all")}
-              className={`font-mono text-xs px-3 py-1.5 rounded border transition-all ${
-                typeFilter === "all"
-                  ? "border-accent-green/50 text-accent-green bg-accent-green/10"
-                  : "border-bg-border text-slate-500 hover:text-slate-300"
-              }`}
-            >
-              All Types
+            <button onClick={() => setTypeFilter("all")}
+              className="font-mono text-xs px-3 py-1.5 rounded border transition-all"
+              style={typeFilter === "all"
+                ? { borderColor: "rgba(0,217,163,0.4)", color: "#00d9a3", background: "rgba(0,217,163,0.1)" }
+                : { borderColor: "#4a4a4a", color: "#6b6b6b" }}>
+              All
             </button>
             {Object.entries(TYPE_META).map(([key, meta]) =>
               issues.some(i => i.type === key) && (
-                <button
-                  key={key}
-                  id={`type-filter-${key}`}
+                <button key={key}
                   onClick={() => setTypeFilter(typeFilter === key ? "all" : key)}
-                  className="font-mono text-xs px-3 py-1.5 rounded border transition-all flex items-center gap-1 cursor-pointer"
+                  className="font-mono text-xs px-3 py-1.5 rounded border transition-all flex items-center gap-1"
                   style={typeFilter === key
-                    ? { borderColor: `${meta.color}60`, color: meta.color, backgroundColor: `${meta.color}15` }
-                    : { borderColor: "#1e2d45", color: "#64748b" }
-                  }
-                >
+                    ? { borderColor: `${meta.color}60`, color: meta.color, background: `${meta.color}15` }
+                    : { borderColor: "#4a4a4a", color: "#6b6b6b" }}>
                   <span>{meta.icon}</span> {meta.label}
                 </button>
               )
@@ -875,9 +330,8 @@ function ResultsDashboard({ data, meta, onReset, onExport, githubToken }) {
         </div>
 
         {filtered.length === 0 ? (
-          <div className="card p-10 text-center">
-            <p className="text-4xl mb-3">🎉</p>
-            <p className="text-slate-400 font-mono text-sm">No issues match the current filters</p>
+          <div className="card p-8 text-center">
+            <p className="font-mono text-sm" style={{ color: "#6b6b6b" }}>No issues match current filters</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -888,79 +342,20 @@ function ResultsDashboard({ data, meta, onReset, onExport, githubToken }) {
         )}
       </div>
 
-      {/* Visual Diff Viewer showing changed lines with inline highlighted issues */}
+      {/* Files */}
       {prInfo?.files?.length > 0 && (
-        <DiffViewer files={prInfo.files} issues={issues} />
-      )}
-
-      {/* Post Comment Modal */}
-      {showCommentModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in animate-fade-in-opacity">
-          <div className="card w-full max-w-md p-6 space-y-4 bg-[#0c121e] border-bg-border relative animate-fade-in-up">
-            <button
-              onClick={() => { setShowCommentModal(false); setCommentSuccessUrl(""); setCommentError(""); }}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-200 text-xl leading-none cursor-pointer"
-            >
-              ×
-            </button>
-            <div className="space-y-2">
-              <h3 className="font-sans font-bold text-slate-100 text-lg flex items-center gap-2">
-                <span>💬</span> Post Review to GitHub
-              </h3>
-              <p className="text-slate-400 text-xs font-body leading-relaxed">
-                This will post a structured code review comment directly to the discussion tab of pull request: <br />
-                <a href={prInfo.url} target="_blank" rel="noopener noreferrer" className="text-accent-blue hover:underline font-mono text-[11px] mt-1 inline-block">
-                  {prInfo.title || prInfo.url}
-                </a>
-              </p>
-            </div>
-
-            {commentSuccessUrl ? (
-              <div className="space-y-4 py-4 text-center">
-                <p className="text-4xl animate-bounce">🎉</p>
-                <p className="font-mono text-sm text-accent-green font-bold">Successfully Posted!</p>
-                <a
-                  href={commentSuccessUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block font-mono text-xs text-accent-blue hover:text-accent-green border border-accent-blue/30 hover:border-accent-green/30 bg-[#070b12] px-4 py-2.5 rounded-lg transition-all"
-                >
-                  View Comment on GitHub ↗
-                </a>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <label className="font-mono text-xs text-slate-500 uppercase tracking-wider block mb-2">
-                    GitHub Personal Access Token <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    className="input-field"
-                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                    value={githubTokenInput}
-                    onChange={e => setGithubTokenInput(e.target.value)}
-                  />
-                  <p className="font-mono text-[10px] text-slate-600 mt-1.5 leading-relaxed">
-                    Requires a token with <code className="text-slate-400 font-bold">repo</code> scope permissions to write Pull Request comments.
-                  </p>
+        <div className="card p-4">
+          <p className="font-mono text-xs uppercase tracking-wider mb-3" style={{ color: "#6b6b6b" }}>Files Reviewed</p>
+          <div className="space-y-2">
+            {prInfo.files.map((f, i) => (
+              <div key={i} className="flex items-center justify-between text-sm">
+                <span className="font-mono text-xs truncate flex-1" style={{ color: "#a0a0a0" }}>{f.name}</span>
+                <div className="flex gap-3 font-mono text-xs shrink-0 ml-3">
+                  <span style={{ color: "#00d9a3" }}>+{f.additions}</span>
+                  <span style={{ color: "#808080" }}>-{f.deletions}</span>
                 </div>
-
-                {commentError && (
-                  <div className="card p-3 border-red-500/30 bg-red-500/5 animate-fade-in-up">
-                    <p className="font-mono text-[10px] text-red-400">⚠ {commentError}</p>
-                  </div>
-                )}
-
-                <button
-                  onClick={handlePostComment}
-                  disabled={commenting || !githubTokenInput.trim()}
-                  className="btn-primary w-full text-sm font-mono flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  {commenting ? "Posting Review..." : "→ Confirm & Post Comment"}
-                </button>
               </div>
-            )}
+            ))}
           </div>
         </div>
       )}
@@ -968,385 +363,213 @@ function ResultsDashboard({ data, meta, onReset, onExport, githubToken }) {
   )
 }
 
-// ─── Input Panel ──────────────────────────────────────────────────────────────
-
+// ── Input Panel ───────────────────────────────────────────────────────────────
 function InputPanel({ onResults, onLoading }) {
   const [inputMode, setInputMode] = useState("github")
-  const [prUrl, setPrUrl]         = useState("")
-  const [ghToken, setGhToken]     = useState("")
-  const [code, setCode]           = useState("")
-  const [filename, setFilename]   = useState("")
-  const [language, setLanguage]   = useState("auto")
-  const [error, setError]         = useState("")
-  const [loading, setLoading]     = useState(false)
-  const textareaRef = useRef(null)
+  const [prUrl, setPrUrl] = useState("")
+  const [ghToken, setGhToken] = useState("")
+  const [code, setCode] = useState("")
+  const [filename, setFilename] = useState("")
+  const [language, setLanguage] = useState("auto")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
 
   async function handleSubmit() {
-    setError("")
-    setLoading(true)
-    onLoading(true)
-    console.log(`[CodeSentinel] Starting review in '${inputMode}' mode.`);
-
+    setError(""); setLoading(true); onLoading(true)
     try {
-      let res, meta
+      let res
       if (inputMode === "github") {
-        const trimmedUrl = prUrl.trim()
-        if (!trimmedUrl) {
-          setError("Please enter a GitHub PR URL")
-          setLoading(false)
-          onLoading(false)
-          return
-        }
-
-        // Structural Regular Expression check: Supports protocol-less inputs, trailing chars, slash endings
-        const prRegex = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/i
-        if (!prRegex.test(trimmedUrl)) {
-          setError("Invalid GitHub PR URL")
-          setLoading(false)
-          onLoading(false)
-          return
-        }
-
-        console.log(`[CodeSentinel] Sending POST /api/review/github with URL: ${trimmedUrl}`);
-        res = await axios.post(
-          `${API}/review/github`,
-          { pr_url: trimmedUrl, github_token: ghToken.trim() },
-          { timeout: 50000 }
-        )
-        meta = { label: trimmedUrl, type: "github" }
+        if (!prUrl.trim()) { setError("Please enter a GitHub PR URL"); setLoading(false); onLoading(false); return }
+        res = await axios.post(`${API}/review/github`, { pr_url: prUrl.trim(), github_token: ghToken.trim() })
       } else {
-        if (!code.trim()) { setError("Please paste some code to review"); setLoading(false); onLoading(false); return }
-        console.log(`[CodeSentinel] Sending POST /api/review/code for file: ${filename || "snippet"}`);
-        res = await axios.post(
-          `${API}/review/code`,
-          {
-            code: code.trim(),
-            language: language || "auto",
-            filename: filename.trim() || "snippet",
-          },
-          { timeout: 50000 }
-        )
-        meta = { label: filename.trim() || "Code Snippet", type: "code" }
+        if (!code.trim()) { setError("Please paste some code"); setLoading(false); onLoading(false); return }
+        res = await axios.post(`${API}/review/code`, { code: code.trim(), language: language || "auto", filename: filename.trim() || "snippet" })
       }
-
-      console.log("[CodeSentinel] Review response received successfully:", res.data);
-      const entry = { data: res.data, meta, timestamp: new Date().toISOString() }
-      saveToHistory(entry)
-      onResults(res.data, meta, inputMode === "github" ? ghToken.trim() : "")
-    } catch (error) {
-      console.error("Frontend error", error);
-      if (error.response) {
-        console.log("Backend status code", error.response.status);
-        console.log("GitHub API response", error.response.data);
-      }
-
-      if (error.response?.data?.detail) {
-        setError(error.response.data.detail)
-      } else {
-        setError("Unexpected error occurred")
-      }
-      setLoading(false)
+      onResults(res.data)
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || "Something went wrong")
       onLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
   return (
     <div className="max-w-2xl mx-auto w-full space-y-6">
-
       {/* Tabs */}
-      <div className="flex border-b border-bg-border">
-        {[["github", "🔗 GitHub PR"], ["code", "📄 Paste Code"]].map(([key, label]) => (
-          <button
-            key={key}
-            id={`tab-${key}`}
+      <div className="flex" style={{ borderBottom: "1px solid #4a4a4a" }}>
+        {[["github","🔗 GitHub PR"],["code","📄 Paste Code"]].map(([key, label]) => (
+          <button key={key}
             onClick={() => { setInputMode(key); setError("") }}
-            className={`font-mono text-sm px-5 py-3 transition-all duration-200 ${inputMode === key ? "tab-active" : "tab-inactive"}`}
-          >
+            className={`font-mono text-sm px-5 py-3 transition-all duration-200 ${inputMode === key ? "tab-active" : "tab-inactive"}`}>
             {label}
           </button>
         ))}
       </div>
 
-      {/* GitHub form */}
       {inputMode === "github" && (
         <div className="space-y-4 animate-fade-in-up">
           <div>
-            <label className="font-mono text-xs text-slate-500 uppercase tracking-wider block mb-2">
-              GitHub PR URL <span className="text-red-400">*</span>
+            <label className="font-mono text-xs uppercase tracking-wider block mb-2" style={{ color: "#6b6b6b" }}>
+              GitHub PR URL <span style={{ color: "#c0392b" }}>*</span>
             </label>
-            <input
-              id="pr-url-input"
-              className="input-field"
-              placeholder="https://github.com/owner/repo/pull/123"
-              value={prUrl}
-              onChange={e => setPrUrl(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleSubmit()}
-            />
+            <input className="input-field" placeholder="https://github.com/owner/repo/pull/123"
+              value={prUrl} onChange={e => setPrUrl(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSubmit()} />
           </div>
           <div>
-            <label className="font-mono text-xs text-slate-500 uppercase tracking-wider block mb-2">
-              GitHub Token <span className="text-slate-600">(optional — for private repos)</span>
+            <label className="font-mono text-xs uppercase tracking-wider block mb-2" style={{ color: "#6b6b6b" }}>
+              GitHub Token <span style={{ color: "#4a4a4a" }}>(optional · private repos)</span>
             </label>
-            <input
-              id="gh-token-input"
-              className="input-field"
-              type="password"
-              placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-              value={ghToken}
-              onChange={e => setGhToken(e.target.value)}
-            />
-            <p className="font-mono text-xs text-slate-600 mt-1.5">
-              Public repos work without a token. Token needs <code className="text-slate-500">repo</code> scope for private repos.
-            </p>
-          </div>
-
-          {/* Example PRs */}
-          <div>
-            <p className="font-mono text-xs text-slate-600 mb-2">Try a public example:</p>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { label: "React #30249",  url: "https://github.com/facebook/react/pull/30249" },
-                { label: "Axios #6186",   url: "https://github.com/axios/axios/pull/6186"    },
-                { label: "FastAPI #2027", url: "https://github.com/tiangolo/fastapi/pull/2027"},
-              ].map(ex => (
-                <button
-                  key={ex.url}
-                  onClick={() => setPrUrl(ex.url)}
-                  className="font-mono text-xs text-accent-blue hover:text-accent-green border border-bg-border hover:border-accent-green/30 px-3 py-1.5 rounded transition-all duration-200"
-                >
-                  {ex.label} ↗
-                </button>
-              ))}
-            </div>
+            <input className="input-field" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+              value={ghToken} onChange={e => setGhToken(e.target.value)} />
           </div>
         </div>
       )}
 
-      {/* Code form */}
       {inputMode === "code" && (
         <div className="space-y-4 animate-fade-in-up">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="font-mono text-xs text-slate-500 uppercase tracking-wider block mb-2">Filename</label>
-              <input
-                id="filename-input"
-                className="input-field"
-                placeholder="main.py"
-                value={filename}
-                onChange={e => setFilename(e.target.value)}
-              />
+              <label className="font-mono text-xs uppercase tracking-wider block mb-2" style={{ color: "#6b6b6b" }}>Filename</label>
+              <input className="input-field" placeholder="main.py" value={filename} onChange={e => setFilename(e.target.value)} />
             </div>
             <div>
-              <label className="font-mono text-xs text-slate-500 uppercase tracking-wider block mb-2">Language</label>
-              <select
-                id="language-select"
-                className="input-field"
-                value={language}
-                onChange={e => setLanguage(e.target.value)}
-              >
+              <label className="font-mono text-xs uppercase tracking-wider block mb-2" style={{ color: "#6b6b6b" }}>Language</label>
+              <select className="input-field" value={language} onChange={e => setLanguage(e.target.value)}>
                 {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
               </select>
             </div>
           </div>
           <div>
-            <label className="font-mono text-xs text-slate-500 uppercase tracking-wider block mb-2">
-              Code <span className="text-red-400">*</span>
+            <label className="font-mono text-xs uppercase tracking-wider block mb-2" style={{ color: "#6b6b6b" }}>
+              Code <span style={{ color: "#c0392b" }}>*</span>
             </label>
-            <textarea
-              id="code-textarea"
-              ref={textareaRef}
-              className="input-field font-mono text-xs resize-none leading-relaxed"
-              rows={14}
-              placeholder="// Paste your code here and get an instant AI review..."
-              value={code}
-              onChange={e => setCode(e.target.value)}
-            />
-            <p className="font-mono text-xs text-slate-600 mt-1">{code.length.toLocaleString()} characters</p>
+            <textarea className="input-field font-mono text-xs resize-none leading-relaxed" rows={12}
+              placeholder="Paste your code here..."
+              value={code} onChange={e => setCode(e.target.value)} />
+            <p className="font-mono text-xs mt-1" style={{ color: "#4a4a4a" }}>{code.length.toLocaleString()} chars</p>
           </div>
         </div>
       )}
 
-      {/* Error */}
       {error && (
-        <div className="card p-3 border-red-500/30 bg-red-500/5 animate-fade-in-up">
-          <p className="font-mono text-xs text-red-400">⚠ {error}</p>
+        <div className="card p-3" style={{ borderColor: "#4a4a4a", background: "#333333" }}>
+          <p className="font-mono text-xs" style={{ color: "#f0f0f0" }}>⚠ {error}</p>
         </div>
       )}
 
-      <button
-        id="run-review-btn"
-        className="btn-primary w-full text-base py-4"
-        onClick={handleSubmit}
-        disabled={loading}
-      >
-        {loading ? "Analyzing…" : "→ Run AI Review"}
+      <button className="btn-primary w-full text-base" onClick={handleSubmit} disabled={loading}>
+        {loading ? "Analyzing..." : "→ Run AI Review"}
       </button>
+
+      <div>
+        <p className="font-mono text-xs mb-2" style={{ color: "#4a4a4a" }}>Try a public PR:</p>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { label: "React #30249", url: "https://github.com/facebook/react/pull/30249" },
+            { label: "Axios #6186",  url: "https://github.com/axios/axios/pull/6186" },
+            { label: "FastAPI #2027",url: "https://github.com/tiangolo/fastapi/pull/2027" },
+          ].map(ex => (
+            <button key={ex.url}
+              onClick={() => { setPrUrl(ex.url); setInputMode("github") }}
+              className="font-mono text-xs px-3 py-1.5 rounded border transition-all duration-200"
+              style={{ color: "#a0a0a0", borderColor: "#4a4a4a" }}
+              onMouseOver={e => e.currentTarget.style.borderColor = "rgba(0,217,163,0.3)"}
+              onMouseOut={e => e.currentTarget.style.borderColor = "#4a4a4a"}>
+              {ex.label} ↗
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
 
-// ─── Header ───────────────────────────────────────────────────────────────────
-
-function Header({ onHistoryOpen, historyCount }) {
+// ── Header ────────────────────────────────────────────────────────────────────
+function Header() {
   return (
-    <header className="border-b border-bg-border bg-bg-secondary/70 backdrop-blur-md sticky top-0 z-40">
+    <header style={{ borderBottom: "1px solid #4a4a4a", background: "rgba(26,26,26,0.9)" }}
+      className="backdrop-blur-sm sticky top-0 z-50">
       <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-accent-green/10 border border-accent-green/20 flex items-center justify-center">
-            <svg width="18" height="18" viewBox="0 0 32 32" fill="none">
-              <path d="M8 11l6 5-6 5" stroke="#00d9a3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-              <line x1="16" y1="21" x2="24" y2="21" stroke="#00d9a3" strokeWidth="2.5" strokeLinecap="round"/>
-            </svg>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{ background: "rgba(0,217,163,0.1)", border: "1px solid rgba(0,217,163,0.2)" }}>
+            <span className="text-base">🛡</span>
           </div>
           <div>
-            <span className="font-sans font-bold text-slate-100 text-lg">CodeSentinel</span>
-            <span className="font-mono text-xs text-slate-600 ml-2">v1.0</span>
+            <span className="font-sans font-bold text-lg" style={{ color: "#f0f0f0" }}>CodeSentinel</span>
+            <span className="font-mono text-xs ml-2" style={{ color: "#4a4a4a" }}>v1.0</span>
           </div>
         </div>
-
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <div className="hidden sm:flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-accent-green status-dot" />
-            <p className="font-mono text-xs text-slate-500">AI Online</p>
+            <div className="w-1.5 h-1.5 rounded-full bg-[#00d9a3] animate-pulse" />
+            <span className="font-mono text-xs" style={{ color: "#6b6b6b" }}>AI Online</span>
           </div>
-
-          <button
-            id="history-btn"
-            onClick={onHistoryOpen}
-            className="flex items-center gap-1.5 font-mono text-xs text-slate-500 hover:text-slate-300 border border-bg-border hover:border-slate-600 px-3 py-1.5 rounded transition-all duration-200"
-          >
-            <span>🕐</span>
-            <span>History</span>
-            {historyCount > 0 && (
-              <span className="bg-accent-green/20 text-accent-green text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                {historyCount}
-              </span>
-            )}
-          </button>
+          <a href="https://github.com" target="_blank" rel="noopener noreferrer"
+            className="font-mono text-xs px-3 py-1.5 rounded border transition-all duration-200"
+            style={{ color: "#6b6b6b", borderColor: "#4a4a4a" }}>
+            GitHub
+          </a>
         </div>
       </div>
     </header>
   )
 }
 
-// ─── Hero ─────────────────────────────────────────────────────────────────────
-
+// ── Hero ──────────────────────────────────────────────────────────────────────
 function Hero() {
   return (
-    <div className="text-center py-16 px-4 space-y-6">
-      <div className="inline-flex items-center gap-2 bg-accent-green/10 border border-accent-green/20 text-accent-green font-mono text-xs px-4 py-2 rounded-full">
-        <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" />
-        Powered by Gemini 2.5 Flash
+    <div className="text-center py-12 px-4 space-y-5">
+      <div className="inline-flex items-center gap-2 font-mono text-xs px-3 py-1.5 rounded-full"
+        style={{ background: "rgba(0,217,163,0.08)", border: "1px solid rgba(0,217,163,0.2)", color: "#00d9a3" }}>
+        <span className="w-1.5 h-1.5 rounded-full bg-[#00d9a3] animate-pulse" />
+        Powered by Gemini 1.5 Flash
       </div>
-      <h1 className="font-sans font-extrabold text-4xl sm:text-6xl text-slate-100 leading-tight">
+      <h1 className="font-sans font-extrabold text-4xl sm:text-5xl leading-tight" style={{ color: "#f0f0f0" }}>
         AI Code Review
         <br />
         <span className="text-glow" style={{ color: "#00d9a3" }}>in Seconds</span>
       </h1>
-      <p className="font-body text-slate-400 text-base max-w-xl mx-auto leading-relaxed">
-        Paste a GitHub PR URL or your code snippet. Get an instant AI-powered review
-        that catches bugs, security vulnerabilities, and performance issues before they ship.
+      <p className="text-base max-w-lg mx-auto leading-relaxed" style={{ color: "#a0a0a0" }}>
+        Paste a GitHub PR URL or your code. Get instant AI-powered reviews that catch bugs,
+        security issues, and performance problems before they ship.
       </p>
-      <div className="flex justify-center gap-4 flex-wrap font-mono text-xs text-slate-500">
-        {["🐛 Bugs", "🔐 Security", "⚡ Performance", "🔴 Code Smells", "📋 Best Practices"].map(t => (
-          <span key={t} className="flex items-center gap-1">{t}</span>
+      <div className="flex justify-center gap-6 font-mono text-xs" style={{ color: "#6b6b6b" }}>
+        {["🐛 Bugs","🔐 Security","⚡ Performance","🔴 Code Smells"].map(t => (
+          <span key={t}>{t}</span>
         ))}
       </div>
     </div>
   )
 }
 
-// ─── App Root ─────────────────────────────────────────────────────────────────
-
+// ── App Root ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [view, setView]         = useState("input")   // input | loading | results
-  const [results, setResults]   = useState(null)
-  const [meta, setMeta]         = useState(null)
-  const [showHistory, setShowHistory] = useState(false)
-  const [history, setHistory]   = useState(loadHistory)
-  const [githubToken, setGithubToken] = useState("")
+  const [view, setView] = useState("input")
+  const [results, setResults] = useState(null)
 
-  function handleResults(data, m, token) {
-    setResults(data)
-    setMeta(m)
-    if (token) setGithubToken(token)
-    setView("results")
-    setHistory(loadHistory())
-  }
-
-  function handleLoading(isLoading) {
-    if (isLoading) {
-      setView("loading")
-    } else {
-      setView("input")
-    }
-  }
-
-  function handleReset() {
-    setResults(null)
-    setMeta(null)
-    setView("input")
-  }
-
-  function handleHistorySelect(item) {
-    setResults(item.data)
-    setMeta(item.meta)
-    setView("results")
-  }
-
-  function handleClearHistory() {
-    localStorage.removeItem(HISTORY_KEY)
-    setHistory([])
-  }
-
-  function handleExport() {
-    if (results) downloadMarkdown(results, meta)
-  }
+  function handleResults(data) { setResults(data); setView("results") }
+  function handleLoading(v) { if (v) setView("loading") }
+  function handleReset() { setResults(null); setView("input") }
 
   return (
-    <div className="min-h-screen bg-grid">
+    <div className="min-h-screen bg-grid" style={{ background: "#1a1a1a" }}>
       <div className="scan-line" />
-
-      <Header
-        onHistoryOpen={() => setShowHistory(true)}
-        historyCount={history.length}
-      />
-
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-20">
+      <Header />
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-16">
         {view !== "results" && <Hero />}
-
         <div className={view === "results" ? "pt-6" : ""}>
           {view === "input"   && <InputPanel onResults={handleResults} onLoading={handleLoading} />}
           {view === "loading" && <LoadingScreen />}
-          {view === "results" && results && (
-            <ResultsDashboard
-              data={results}
-              meta={meta}
-              onReset={handleReset}
-              onExport={handleExport}
-              githubToken={githubToken}
-            />
-          )}
+          {view === "results" && results && <ResultsDashboard data={results} onReset={handleReset} />}
         </div>
       </main>
-
-      {/* Footer */}
-      <footer className="border-t border-bg-border py-6">
+      <footer style={{ borderTop: "1px solid #4a4a4a" }} className="py-6 mt-8">
         <div className="max-w-6xl mx-auto px-6 flex items-center justify-between flex-wrap gap-3">
-          <span className="font-mono text-xs text-slate-600">CodeSentinel · AI Code Review Agent</span>
-          <span className="font-mono text-xs text-slate-700">Gemini 2.5 Flash · FastAPI · React</span>
+          <span className="font-mono text-xs" style={{ color: "#4a4a4a" }}>CodeSentinel · AI Code Review Agent</span>
+          <span className="font-mono text-xs" style={{ color: "#3a3a3a" }}>Built with Gemini AI + FastAPI + React</span>
         </div>
       </footer>
-
-      {/* History panel overlay */}
-      {showHistory && (
-        <HistoryPanel
-          history={history}
-          onSelect={handleHistorySelect}
-          onClose={() => setShowHistory(false)}
-          onClear={handleClearHistory}
-        />
-      )}
     </div>
   )
 }
