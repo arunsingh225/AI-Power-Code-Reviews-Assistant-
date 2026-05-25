@@ -171,9 +171,6 @@ async def fetch_pr_data(owner: str, repo: str, pr_number: int, token: str = ""):
         )
         
         pr_resp, files_resp = await asyncio.gather(pr_task, files_task)
-    finally:
-        if http_client is None:
-            await client.aclose()
     except httpx.TimeoutException:
         logger.error(f"GitHub API connection timed out for PR {owner}/{repo}#{pr_number}")
         raise HTTPException(
@@ -186,6 +183,9 @@ async def fetch_pr_data(owner: str, repo: str, pr_number: int, token: str = ""):
             status_code=502,
             detail="Failed to connect to GitHub API"
         )
+    finally:
+        if http_client is None:
+            await client.aclose()
 
     if pr_resp.status_code == 404:
         logger.warning(f"PR not found (404) for: {owner}/{repo}#{pr_number}")
