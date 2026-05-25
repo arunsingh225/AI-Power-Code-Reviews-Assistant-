@@ -32,7 +32,13 @@ allowed_origins_env = os.environ.get("ALLOWED_ORIGINS", "")
 if allowed_origins_env:
     allowed_origins = allowed_origins_env.split(",")
 else:
-    allowed_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "https://frontend-az594qu4q-arunsingh225s-projects.vercel.app",
+        "https://frontend-amber-beta-h3vpr041av.vercel.app",
+    ]
 
 logger.info(f"CORS configurations - Allowed Origins: {allowed_origins}")
 app.add_middleware(

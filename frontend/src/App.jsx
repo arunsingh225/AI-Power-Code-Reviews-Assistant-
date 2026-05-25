@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import axios from "axios"
 
-const API = "/api"
+const API = import.meta.env.VITE_API_URL || "/api"
 
 const SEVERITY = {
   critical: { color: "#F5F5F5", bg: "rgba(255,255,255,0.06)", border: "rgba(255,255,255,0.15)", label: "CRITICAL" },
