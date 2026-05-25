@@ -523,7 +523,7 @@ function Hero() {
       <div className="inline-flex items-center gap-2 font-mono text-xs px-4 py-2 rounded-full"
         style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#00FFB2" }}>
         <span className="w-1.5 h-1.5 rounded-full bg-[#00FFB2] animate-pulse" />
-        Powered by Gemini 1.5 Flash
+        Powered by Gemini 2.5 Flash
       </div>
       <h1 className="font-sans font-extrabold text-5xl sm:text-7xl leading-tight tracking-tight">
         <span className="bg-gradient-to-r from-[#F5F5F5] via-[#E0E0E0] to-[#A0A0A0] bg-clip-text text-transparent">AI Code Review</span>

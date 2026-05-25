@@ -76,13 +76,50 @@ async def rate_limit_middleware(request: Request, call_next):
     
     return await call_next(request)
 
+# ─── Connection Pooling & Smart In-Memory Cache ───────────────────────────────
+import hashlib
+
+http_client: httpx.AsyncClient = None
+pr_reviews_cache = {}
+code_reviews_cache = {}
+CACHE_TTL = 3600  # 1 hour cache duration
+MAX_CACHE_SIZE = 100
+
+def get_code_hash(code: str, language: str, filename: str) -> str:
+    payload = f"{code}:{language}:{filename}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+def prune_caches():
+    now = time.time()
+    for cache in [pr_reviews_cache, code_reviews_cache]:
+        expired = [k for k, v in cache.items() if now - v[0] > CACHE_TTL]
+        for k in expired:
+            cache.pop(k, None)
+    for cache in [pr_reviews_cache, code_reviews_cache]:
+        if len(cache) > MAX_CACHE_SIZE:
+            sorted_keys = sorted(cache.keys(), key=lambda k: cache[k][0])
+            for k in sorted_keys[:len(cache) - MAX_CACHE_SIZE]:
+                cache.pop(k, None)
+
 @app.on_event("startup")
 async def startup_event():
+    global http_client
+    limits = httpx.Limits(max_keepalive_connections=15, max_connections=30)
+    http_client = httpx.AsyncClient(limits=limits, timeout=30.0)
+    
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         logger.critical("⚠️ CRITICAL WARNING: GEMINI_API_KEY environment variable is not configured! Review routes will fail.")
     else:
         logger.info("✅ Startup Check: GEMINI_API_KEY loaded successfully.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global http_client
+    if http_client:
+        logger.info("Closing shared HTTPX client pool...")
+        await http_client.aclose()
+
 
 # ─── Models ────────────────────────────────────────────────────────────────────
 
@@ -116,23 +153,27 @@ def parse_pr_url(url: str):
 
 
 async def fetch_pr_data(owner: str, repo: str, pr_number: int, token: str = ""):
+    global http_client
     headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "CodeSentinel/1.0"}
     if token:
         headers["Authorization"] = f"token {token}"
 
+    client = http_client if http_client is not None else httpx.AsyncClient(timeout=30.0)
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # Performance optimization: Fetch PR metadata and PR files concurrently
-            pr_task = client.get(
-                f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}",
-                headers=headers,
-            )
-            files_task = client.get(
-                f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files",
-                headers=headers,
-            )
-            
-            pr_resp, files_resp = await asyncio.gather(pr_task, files_task)
+        # Performance optimization: Fetch PR metadata and PR files concurrently
+        pr_task = client.get(
+            f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}",
+            headers=headers,
+        )
+        files_task = client.get(
+            f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files",
+            headers=headers,
+        )
+        
+        pr_resp, files_resp = await asyncio.gather(pr_task, files_task)
+    finally:
+        if http_client is None:
+            await client.aclose()
     except httpx.TimeoutException:
         logger.error(f"GitHub API connection timed out for PR {owner}/{repo}#{pr_number}")
         raise HTTPException(
@@ -292,13 +333,13 @@ You MUST respond with ONLY a valid raw JSON object matching the JSON schema prov
         system_instruction=system_instruction
     )
 
-    logger.info("Sending request to Gemini API (non-blocking thread with retry fallback)...")
+    logger.info("Sending request to Gemini API using native async...")
     max_retries = 3
     delay = 1.5
     response = None
     for attempt in range(1, max_retries + 1):
         try:
-            response = await asyncio.to_thread(model.generate_content, prompt)
+            response = await model.generate_content_async(prompt)
             raw = response.text
             logger.info(f"Gemini API call returned a response successfully on attempt {attempt}.")
             break
@@ -342,6 +383,18 @@ async def review_github_pr(request: PRReviewRequest):
     pr_info, files = await fetch_pr_data(owner, repo, pr_number, request.github_token)
     logger.info(f"Successfully fetched PR data. Title: '{pr_info.get('title')}', Files count: {len(files)}")
     
+    head_sha = pr_info.get("head", {}).get("sha", "")
+    cache_key = (owner, repo, pr_number, head_sha)
+    
+    now = time.time()
+    if cache_key in pr_reviews_cache:
+        timestamp, cached_result = pr_reviews_cache[cache_key]
+        if now - timestamp < CACHE_TTL:
+            logger.info(f"🚀 Performance Optimization: Cache HIT for PR {owner}/{repo}#{pr_number} at commit {head_sha[:7]}!")
+            return cached_result
+            
+    logger.info(f"Cache miss for PR {owner}/{repo}#{pr_number} at commit {head_sha[:7]}. Generating review...")
+    
     prompt = build_pr_prompt(pr_info, files)
     result = await run_gemini_review(prompt)
 
@@ -369,6 +422,10 @@ async def review_github_pr(request: PRReviewRequest):
             for f in files[:12]
         ],
     }
+    
+    prune_caches()
+    pr_reviews_cache[cache_key] = (time.time(), result)
+    
     logger.info("Completed GitHub PR review successfully.")
     return result
 
@@ -441,12 +498,17 @@ async def post_github_comment(request: PostCommentRequest):
         "Authorization": f"token {request.github_token.strip()}"
     }
     
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    global http_client
+    client = http_client if http_client is not None else httpx.AsyncClient(timeout=15.0)
+    try:
         resp = await client.post(
             f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments",
             headers=headers,
             json={"body": md}
         )
+    finally:
+        if http_client is None:
+            await client.aclose()
         
     if resp.status_code == 201:
         logger.info("Successfully posted review comment to GitHub.")
@@ -465,8 +527,22 @@ async def review_raw_code(request: CodeReviewRequest):
     if len(request.code.strip()) < 10:
         logger.warning("Rejected raw code review request: Code snippet is too short.")
         raise HTTPException(status_code=400, detail="Code is too short to review.")
+        
+    cache_key = get_code_hash(request.code, request.language, request.filename)
+    now = time.time()
+    if cache_key in code_reviews_cache:
+        timestamp, cached_result = code_reviews_cache[cache_key]
+        if now - timestamp < CACHE_TTL:
+            logger.info("🚀 Performance Optimization: Cache HIT for raw code review!")
+            return cached_result
+            
+    logger.info("Cache miss for raw code review. Generating review...")
     prompt = build_code_prompt(request.code, request.language, request.filename)
     result = await run_gemini_review(prompt)
+    
+    prune_caches()
+    code_reviews_cache[cache_key] = (time.time(), result)
+    
     logger.info("Completed raw code review successfully.")
     return result
 
