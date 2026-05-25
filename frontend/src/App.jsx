@@ -465,9 +465,9 @@ function InputPanel({ onResults, onLoading }) {
         <p className="font-mono text-xs mb-2" style={{ color: "#4a4a4a" }}>Try a public PR:</p>
         <div className="flex flex-wrap gap-2">
           {[
-            { label: "React #30249", url: "https://github.com/facebook/react/pull/30249" },
             { label: "Axios #6186",  url: "https://github.com/axios/axios/pull/6186" },
             { label: "FastAPI #2027",url: "https://github.com/tiangolo/fastapi/pull/2027" },
+            { label: "Next.js #71568",url: "https://github.com/vercel/next.js/pull/71568" },
           ].map(ex => (
             <button key={ex.url}
               onClick={() => { setPrUrl(ex.url); setInputMode("github") }}
@@ -549,7 +549,7 @@ export default function App() {
   const [results, setResults] = useState(null)
 
   function handleResults(data) { setResults(data); setView("results") }
-  function handleLoading(v) { if (v) setView("loading") }
+  function handleLoading(v) { setView(v ? "loading" : "input") }
   function handleReset() { setResults(null); setView("input") }
 
   return (
